@@ -6,7 +6,7 @@ from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 import warnings
 
 warnings.filterwarnings(
@@ -77,61 +77,66 @@ def main():
     British-inspired AI assistant: composed, articulate, friendly,
     and subtly humorous.
     """
-    memory = InMemorySaver()
+    with SqliteSaver.from_conn_string("friday_memory.sqlite") as memory:
 
-    agent_executor = create_agent(model, tools, system_prompt=system_prompt, checkpointer = memory)
+        agent_executor = create_agent(model, tools, system_prompt=system_prompt, checkpointer = memory)
 
-    config = {
-        "configurable": {
-            "thread_id": "friday_main_session"
+        config = {
+            "configurable": {
+                "thread_id": "friday_main_session"
+            }
         }
-    }
 
-    print()
-    type_text("FRIDAY: Good day! Systems are online.")
-    type_text("FRIDAY: How may I assist you today?")
-    print("Type 'quit' to exit.\n")
+        print()
+        type_text("FRIDAY: Good day! Systems are online.")
+        type_text("FRIDAY: How may I assist you today?")
+        print("Type 'quit' to exit.\n")
 
-    while True:
-        try:
-            user_input = input("\nYou: ").strip()
-        except(EOFError, KeyboardInterrupt):
-            print("\n")
-            type_text("FRIDAY: Signing off. Until next time.")
-            break
+        while True:
+            try:
+                user_input = input("\nYou: ").strip()
+            except(EOFError, KeyboardInterrupt):
+                print("\n")
+                type_text("FRIDAY: Signing off. Until next time.")
+                break
 
-        if user_input == "quit":
-            print("\nFRIDAY: Until next time. Have a wonderful day!")
-            break
+            if user_input == "quit":
+                print("\nFRIDAY: Until next time. Have a wonderful day!")
+                break
 
-        if not user_input:
-            continue
+            if not user_input:
+                continue
 
-        result = agent_executor.invoke({"messages": [HumanMessage(content=user_input)]}, config=config)
+            try:
+                result = agent_executor.invoke({"messages": [HumanMessage(content=user_input)]}, config=config)
 
-        response = None
+                response = None
 
-        for message in reversed(result["messages"]):
-            if message.type == "ai" and message.content:
-                if isinstance(message.content, str):
-                    response = message.content
-                else:
-                    text_parts = [
-                        item["text"]
-                        for item in message.content
-                        if isinstance(item, dict)
-                        and item.get("type") == "text"
-                    ]
+                for message in reversed(result["messages"]):
+                    if message.type == "ai" and message.content:
+                        if isinstance(message.content, str):
+                            response = message.content
+                        else:
+                            text_parts = [
+                                item["text"]
+                                for item in message.content
+                                if isinstance(item, dict)
+                                and item.get("type") == "text"
+                            ]
 
-                    response = "\n".join(text_parts)
-                    
+                            response = "\n".join(text_parts)
+                            
+                        if response:
+                            break
+
                 if response:
-                    break
+                    print("\nFRIDAY: ", end="", flush=True)
+                    type_text(response)
+                    print()
 
-        if response:
-            print("\nFRIDAY: ", end="", flush=True)
-            type_text(response)
-            print()
+            except Exception as error:
+                print(f"\nFRIDAY: I'm afraid something went wrong: {error}")
+                print("Please check your connection and try again.\n")
 
 if __name__ == "__main__":
     main()
