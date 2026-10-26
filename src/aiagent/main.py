@@ -1,13 +1,16 @@
-import sys
+import asyncio
+import re
 import time
+import warnings
 
+import edge_tts
+import pygame
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.sqlite import SqliteSaver
-import warnings
 
 warnings.filterwarnings(
     "ignore",
@@ -15,13 +18,18 @@ warnings.filterwarnings(
     category=UserWarning
 )
 
+pygame.mixer.init()
 load_dotenv()
+
+
 
 @tool
 def calculator(a: float, b: float) -> str:
     """Useful for performing basic arithmetic calculations with numbers"""
     print("\n[FRIDAY is calculating...]")
     return f"The sum of {a} and {b} is {a+b}"
+
+
 
 def type_text(text, delay = 0.015):
     """Display text one character at a time."""
@@ -31,12 +39,55 @@ def type_text(text, delay = 0.015):
         time.sleep(delay)
     print()
 
+
+
+def clean_text(text):
+    # Remove Markdown links but keep their visible text
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+
+    # Remove code blocks and inline code markers
+    text = re.sub(r'```[\s\S]*?```', ' ', text)
+    text = re.sub(r'`([^`]*)`', r'\1', text)
+
+    # Remove bold, italic, strikethrough and heading markers
+    text = re.sub(r'[*_~#]+', '', text)
+
+    # Remove Markdown list and quote markers
+    text = re.sub(r'(?m)^\s*[-+>]\s+', '', text)
+    text = re.sub(r'(?m)^\s*\d+\.\s+', '', text)
+
+    # Remove repeated whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    return text
+
+
+
+async def speak(text):
+    filename = "friday_voice.mp3"
+
+    try:
+        pygame.mixer.music.stop()
+        pygame.mixer.music.unload()
+    except pygame.error:
+        pass
+
+    communicate = edge_tts.Communicate(
+        text, 
+        voice = "en-GB-RyanNeural"
+    )
+
+    await communicate.save(filename)
+
+
+
 def main():
     model = ChatGoogleGenerativeAI(
         model="gemini-3.5-flash-lite",
         temperature = 0/7
     )
 
+    voice_enabled = True
     tools = [calculator]
 
     system_prompt = """
@@ -107,6 +158,16 @@ def main():
             if not user_input:
                 continue
 
+            if user_input.lower() == "voice off":
+                voice_enabled = False
+                print("FRIDAY: Voice output disabed.")
+                continue
+
+            if user_input.lower() == "voice on":
+                voice_enabled = True
+                print("FRIDAY: Voice output enabled.")
+                continue
+
             try:
                 result = agent_executor.invoke({"messages": [HumanMessage(content=user_input)]}, config=config)
 
@@ -130,13 +191,36 @@ def main():
                             break
 
                 if response:
-                    print("\nFRIDAY: ", end="", flush=True)
-                    type_text(response)
-                    print()
+                    clean_response = clean_text(response)
 
-            except Exception as error:
+                    print("\nFRIDAY: ", end="", flush=True)
+
+                    if voice_enabled:
+                        try:
+                            asyncio.run(speak(clean_response))
+
+                            pygame.mixer.music.load("friday_voice.mp3")
+                            pygame.mixer.music.play()
+
+                            type_text(clean_response)
+                            print()
+
+                            while pygame.mixer.music.get_busy():
+                                time.sleep(0.1)
+
+                            pygame.mixer.music.unload()
+
+                        except (OSError, RuntimeError, TimeoutError, ValueError) as e:
+                            print(f"[Voice error: {e}]")
+                    else:
+                        type_text(clean_response)
+                        print()
+
+            except (ConnectionError, TimeoutError, ValueError, RuntimeError) as error:
                 print(f"\nFRIDAY: I'm afraid something went wrong: {error}")
                 print("Please check your connection and try again.\n")
+
+
 
 if __name__ == "__main__":
     main()

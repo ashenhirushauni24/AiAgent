@@ -16,8 +16,8 @@ if not api_key:
 print("2. API key loaded", flush=True)
 
 model = ChatGoogleGenerativeAI(
-    model="gemini-3.5-flash-lite",
-    timeout=60,
+    model="gemini-3.8-flash",
+    timeout=20,
     max_retries=0
 )
 
@@ -29,7 +29,7 @@ try:
     response = model.invoke("Say hello in one sentence.")
 
     print("5. Response received!", flush=True)
-    print(response.content[0]["text"])
+    print(response.content)
 
 except (APIError, TimeoutError, ConnectionError) as e:
     print(f"API or connection error: {e}")
